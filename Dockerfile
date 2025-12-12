@@ -3,7 +3,7 @@ FROM oven/bun:latest AS builder
 WORKDIR /usr/src/app
 
 # Copy only package files first for better caching
-COPY package.json tsconfig.json config.json ./
+COPY package.json tsconfig.json ./
 COPY .env* ./
 
 # Copy app files (type=module + TypeScript source files)
