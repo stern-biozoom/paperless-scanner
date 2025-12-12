@@ -17,7 +17,7 @@ A lightweight web-based scanner bridge for Paperless-ngx — runs as a Docker co
 docker pull fakeridoo/paperless-scanner:latest
 ```
 
-Run the image (example)
+### Run (example)
 
 ```bash
 docker run --rm -it \
