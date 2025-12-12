@@ -25,7 +25,6 @@ docker run --rm -it \
    --device /dev/bus/usb:/dev/bus/usb \
    -v $(pwd)/scans:/tmp \
    -v $(pwd)/config.json:/usr/src/app/config.json:ro \
-   -v $(pwd)/templates:/usr/src/app/templates:ro \
    --privileged \
    fakeridoo/paperless-scanner:latest
 ```
@@ -43,7 +42,6 @@ services:
       volumes:
          - ./scans:/tmp
          - ./config.json:/usr/src/app/config.json:ro
-         - ./templates:/usr/src/app/templates:ro
       devices:
          - "/dev/bus/usb:/dev/bus/usb"
       network_mode: host
