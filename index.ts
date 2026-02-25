@@ -55,11 +55,26 @@ async function scanPage(): Promise<string> {
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const finalFilePath = `${settings.scanOutputDir}/scan-${timestamp}.pdf`;
+  const ext = settings.outputFormat || "pdf";
+  const finalFilePath = `${settings.scanOutputDir}/scan-${timestamp}.${ext}`;
   const tempFilePath = `${finalFilePath}.tmp`;
   
-  // Use a temporary file to avoid creating the final file if the scan fails.
-  const cmd = `scanimage --device-name="${scannerDevice}" --format=pdf --resolution=${settings.scanResolution} > "${tempFilePath}"`;
+  // Build scanimage command
+  let cmd = `scanimage --device-name="${scannerDevice}" --format=${ext} --resolution=${settings.scanResolution}`;
+  
+  if (settings.source) {
+    cmd += ` --source="${settings.source}"`;
+  }
+  
+  if (settings.pageWidth && settings.pageWidth > 0) {
+    cmd += ` -x ${settings.pageWidth}`;
+  }
+  
+  if (settings.pageHeight && settings.pageHeight > 0) {
+    cmd += ` -y ${settings.pageHeight}`;
+  }
+  
+  cmd += ` > "${tempFilePath}"`;
   
   log(`Starting page scan with device: ${scannerDevice}...`);
 

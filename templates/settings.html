@@ -196,6 +196,47 @@ button {
   </div>
 
   <div class="form-group">
+    <label for="source">Scan Source</label>
+    <input type="text" id="source" name="source" placeholder="e.g., ADF, Flatbed">
+    <div class="help-text">Leave empty for scanner default (e.g., "ADF", "Flatbed", "Automatic Document Feeder")</div>
+  </div>
+
+  <div class="form-group">
+    <label for="pageFormat">Common Page Formats</label>
+    <select id="pageFormat">
+      <option value="custom">Custom (use manual values below)</option>
+      <option value="a4">A4 (210 x 297 mm)</option>
+      <option value="a5">A5 (148 x 210 mm)</option>
+      <option value="letter">Letter (216 x 279 mm)</option>
+      <option value="legal">Legal (216 x 356 mm)</option>
+    </select>
+  </div>
+
+  <div class="form-group" style="display: flex; gap: 1rem;">
+    <div style="flex: 1;">
+      <label for="pageWidth">Page Width (mm)</label>
+      <input type="number" id="pageWidth" name="pageWidth" min="0" step="1" placeholder="0">
+      <div class="help-text">0 for default</div>
+    </div>
+    <div style="flex: 1;">
+      <label for="pageHeight">Page Height (mm)</label>
+      <input type="number" id="pageHeight" name="pageHeight" min="0" step="1" placeholder="0">
+      <div class="help-text">0 for default</div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="outputFormat">Output Format</label>
+    <select id="outputFormat" name="outputFormat">
+      <option value="pdf">PDF</option>
+      <option value="tiff">TIFF</option>
+      <option value="png">PNG</option>
+      <option value="jpeg">JPEG</option>
+    </select>
+    <div class="help-text">File format for the scanned pages</div>
+  </div>
+
+  <div class="form-group">
     <label for="testUpload">Test File Upload</label>
     <input type="file" id="testUpload" accept=".pdf,.jpg,.jpeg,.png,.tiff,.tif" style="margin-bottom: 0.5rem;">
     <div class="help-text">Select a document file to test uploading to Paperless-ngx</div>
@@ -222,6 +263,28 @@ const newTagInput = document.getElementById("newTag");
 const tagsDisplay = document.getElementById("tagsDisplay");
 const testUploadInput = document.getElementById("testUpload");
 const uploadTestBtn = document.getElementById("uploadTestBtn");
+const pageFormatSelect = document.getElementById("pageFormat");
+const pageWidthInput = document.getElementById("pageWidth");
+const pageHeightInput = document.getElementById("pageHeight");
+
+const PAGE_FORMATS = {
+  a4: { width: 210, height: 297 },
+  a5: { width: 148, height: 210 },
+  letter: { width: 216, height: 279 },
+  legal: { width: 216, height: 356 }
+};
+
+pageFormatSelect.onchange = () => {
+  const format = pageFormatSelect.value;
+  if (PAGE_FORMATS[format]) {
+    pageWidthInput.value = PAGE_FORMATS[format].width;
+    pageHeightInput.value = PAGE_FORMATS[format].height;
+  }
+};
+
+pageWidthInput.oninput = pageHeightInput.oninput = () => {
+  pageFormatSelect.value = "custom";
+};
 
 function showStatus(message, type = 'success') {
   statusEl.textContent = message;
@@ -271,6 +334,22 @@ async function loadSettings() {
       document.getElementById("scanOutputDir").value = currentSettings.scanOutputDir || '/tmp';
       document.getElementById("scanResolution").value = currentSettings.scanResolution || 300;
       document.getElementById("scannerDeviceUrl").value = currentSettings.scannerDeviceUrl || '';
+      document.getElementById("source").value = currentSettings.source || '';
+      document.getElementById("pageWidth").value = currentSettings.pageWidth || 0;
+      document.getElementById("pageHeight").value = currentSettings.pageHeight || 0;
+      document.getElementById("outputFormat").value = currentSettings.outputFormat || 'pdf';
+      
+      // Update page format dropdown based on loaded values
+      const w = currentSettings.pageWidth;
+      const h = currentSettings.pageHeight;
+      let matchedFormat = "custom";
+      for (const [format, dims] of Object.entries(PAGE_FORMATS)) {
+        if (dims.width === w && dims.height === h) {
+          matchedFormat = format;
+          break;
+        }
+      }
+      pageFormatSelect.value = matchedFormat;
       
       defaultTags = currentSettings.defaultTags || ['scanned', 'automated'];
       renderTags();
@@ -279,6 +358,9 @@ async function loadSettings() {
     showStatus(`Failed to load settings: ${error.message}`, "error");
   }
 }
+
+// Ensure loadSettings is called on page load
+window.onload = loadSettings;
 
 // Save settings
 form.onsubmit = async (e) => {
@@ -291,6 +373,10 @@ form.onsubmit = async (e) => {
     scanOutputDir: formData.get('scanOutputDir'),
     scanResolution: parseInt(formData.get('scanResolution')),
     scannerDeviceUrl: formData.get('scannerDeviceUrl'),
+    source: formData.get('source'),
+    pageWidth: parseInt(formData.get('pageWidth')) || 0,
+    pageHeight: parseInt(formData.get('pageHeight')) || 0,
+    outputFormat: formData.get('outputFormat'),
     defaultTags: defaultTags
   };
 
@@ -412,7 +498,7 @@ newTagInput.onkeypress = (e) => {
 };
 
 // Load settings when page loads
-loadSettings();
+// loadSettings(); // Handled by window.onload
 
 // Make removeTag function global
 window.removeTag = removeTag;
