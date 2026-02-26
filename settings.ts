@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS: Settings = {
   source: "", // Empty means default
   duplex: false, // Disabled by default
   swskip: 0, // 0 means disabled
-  outputFormat: "pdf"
+  outputFormat: "tiff" // use TIFF as default as it becomes better-to-consume PDF
 };
 
 const SETTINGS_FILE = path.join(process.cwd(), "config", "config.json");

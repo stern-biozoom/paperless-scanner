@@ -285,26 +285,15 @@ async function combineAndUpload(sessionId: string = 'default') {
       throw new Error("No pages to upload");
     }
 
-    if (session.pages.length === 1) {
-      // Single page - upload directly
-      const singlePage = session.pages[0];
-      if (!singlePage) {
-        throw new Error("Page not found");
-      }
-      await paperlessAPI.uploadDocument(singlePage.filepath);
-      documentManager.removePageFromSession(sessionId, singlePage.id);
-      log("Single page uploaded and removed from session!");
-    } else {
-      // Multiple pages - combine first
-      const combinedPath = await documentManager.combineSessionPages(sessionId);
-      await paperlessAPI.uploadDocument(combinedPath);
-      
-      // Clean up combined file and clear session
-      fs.unlinkSync(combinedPath);
-      documentManager.clearSession(sessionId);
-      
-      log(`Combined ${session.pages.length} pages, uploaded, and cleaned up!`);
-    }
+    // Can be multiple pages - combine always
+    const combinedPath = await documentManager.combineSessionPages(sessionId);
+    await paperlessAPI.uploadDocument(combinedPath);
+
+    // Clean up combined file and clear session
+    fs.unlinkSync(combinedPath);
+    documentManager.clearSession(sessionId);
+
+    log(`Combined ${session.pages.length} pages, uploaded, and cleaned up!`);
   } catch (err) {
     log("Combine and upload error: " + err);
   }
@@ -583,6 +572,57 @@ serve({
       } catch (error) {
         return new Response(JSON.stringify({ 
           error: error instanceof Error ? error.message : 'Failed to combine and upload' 
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Upload selected pages individually
+    if (req.method === "POST" && url.pathname === "/api/upload-selected") {
+      try {
+        const body = await req.json() as any;
+        const sessionId = body.sessionId as string || 'default';
+        const pageIds = body.pageIds as string[];
+
+        if (!pageIds || pageIds.length === 0) {
+          return new Response(JSON.stringify({ error: 'No page IDs specified' }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        const session = documentManager.getSession(sessionId);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Session not found' }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        // Upload each selected page individually (async, don't await in request)
+        (async () => {
+          let uploadedCount = 0;
+          for (const pageId of pageIds) {
+            try {
+              await paperlessAPI.uploadDocument(pageId);
+              documentManager.removePageFromSession(sessionId, pageId);
+              uploadedCount++;
+              log(`Uploaded and removed: ${path.basename(pageId)}`);
+            } catch (err) {
+              log(`Failed to upload ${path.basename(pageId)}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          log(`Upload selected complete: ${uploadedCount}/${pageIds.length} page(s) uploaded`);
+        })();
+
+        return new Response(JSON.stringify({ status: "upload selected started" }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({
+          error: error instanceof Error ? error.message : 'Failed to upload selected pages'
         }), {
           status: 500,
           headers: { "Content-Type": "application/json" },

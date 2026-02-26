@@ -176,6 +176,7 @@ button {
   <div id="pagesControls" style="margin-top: 1rem; display: none;">
     <button id="selectAllBtn" class="secondary-btn" style="margin-right: 0.5rem;">Select All</button>
     <button id="selectNoneBtn" class="secondary-btn" style="margin-right: 1rem;">Select None</button>
+    <button id="uploadSelectedBtn" class="primary-btn" style="margin-right: 0.5rem;">📤 Upload Selected</button>
     <button id="combineUploadBtn" class="primary-btn" style="margin-right: 0.5rem;">📤 Combine & Upload All</button>
     <button id="deleteSelectedBtn" class="danger-btn" style="margin-right: 1rem;">🗑️ Delete Selected</button>
     <button id="clearAllBtn" class="danger-btn">🗑️ Clear All</button>
@@ -202,6 +203,7 @@ const pagesList = document.getElementById("pagesList");
 const pagesControls = document.getElementById("pagesControls");
 const selectAllBtn = document.getElementById("selectAllBtn");
 const selectNoneBtn = document.getElementById("selectNoneBtn");
+const uploadSelectedBtn = document.getElementById("uploadSelectedBtn");
 const combineUploadBtn = document.getElementById("combineUploadBtn");
 const deleteSelectedBtn = document.getElementById("deleteSelectedBtn");
 const clearAllBtn = document.getElementById("clearAllBtn");
@@ -211,6 +213,7 @@ const scanProgress = document.getElementById("scanProgress");
 const scanProgressText = document.getElementById("scanProgressText");
 
 let currentPages = [];
+let outputFormat = 'pdf';
 
 function showStatus(message, type = 'success') {
   statusEl.textContent = message;
@@ -321,7 +324,15 @@ function renderPages() {
   } else {
     pagesEmpty.style.display = 'none';
     pagesControls.style.display = 'block';
-    
+
+    const canCombine = (outputFormat === 'pdf' || outputFormat === 'tiff');
+    combineUploadBtn.disabled = !canCombine;
+    if (!canCombine) {
+      combineUploadBtn.title = 'Combining is only supported for PDF and TIFF formats';
+    } else {
+      combineUploadBtn.title = '';
+    }
+
     currentPages.forEach((page, index) => {
       const pageEl = document.createElement('div');
       pageEl.className = 'page-item';
@@ -363,6 +374,39 @@ function updateCheckboxes(checked) {
 // Page control handlers
 selectAllBtn.onclick = () => updateCheckboxes(true);
 selectNoneBtn.onclick = () => updateCheckboxes(false);
+
+uploadSelectedBtn.onclick = async () => {
+  const selectedPageIds = getSelectedPageIds();
+  if (selectedPageIds.length === 0) {
+    showStatus('Please select at least one page to upload', 'error');
+    return;
+  }
+
+  try {
+    uploadSelectedBtn.disabled = true;
+    uploadSelectedBtn.textContent = '⏳ Uploading...';
+
+    const response = await fetch('/api/upload-selected', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'default', pageIds: selectedPageIds })
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      showStatus(`Uploading ${selectedPageIds.length} page(s)...`, 'success');
+      setTimeout(loadPages, 3000);
+    } else {
+      showStatus(`Upload failed: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    showStatus(`Network error: ${error.message}`, 'error');
+  } finally {
+    uploadSelectedBtn.disabled = false;
+    uploadSelectedBtn.textContent = '📤 Upload Selected';
+  }
+};
 
 combineUploadBtn.onclick = async () => {
   if (currentPages.length === 0) {
@@ -460,8 +504,21 @@ clearAllBtn.onclick = async () => {
   }
 };
 
-// Load pages when the page loads
-loadPages();
+// Fetch output format setting
+async function loadOutputFormat() {
+  try {
+    const response = await fetch('/api/settings');
+    if (response.ok) {
+      const settings = await response.json();
+      outputFormat = settings.outputFormat || 'pdf';
+    }
+  } catch (e) {
+    // Default to pdf on error
+  }
+}
+
+// Load settings and pages when the page loads
+loadOutputFormat().then(() => loadPages());
 
 // Auto-refresh pages every 10 seconds
 setInterval(loadPages, 10000);
