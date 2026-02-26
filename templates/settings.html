@@ -139,6 +139,43 @@ button {
   color: #0c5460;
   border: 1px solid #bee5eb;
 }
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+  vertical-align: middle;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 26px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+.switch input:checked + .slider {
+  background-color: #007bff;
+}
+.switch input:checked + .slider:before {
+  transform: translateX(24px);
+}
 </style>
 </head>
 <body>
@@ -212,6 +249,22 @@ button {
       <option value="">-- Select Source --</option>
     </select>
     <div class="help-text">Leave empty for scanner default (e.g., "ADF", "Flatbed", "Automatic Document Feeder")</div>
+  </div>
+
+  <div class="form-group" style="display: flex; gap: 2rem; align-items: flex-start;">
+    <div>
+      <label for="duplex">Duplex Scan</label>
+      <label class="switch">
+        <input type="checkbox" id="duplex" name="duplex">
+        <span class="slider"></span>
+      </label>
+      <div class="help-text">Scan both sides of each page</div>
+    </div>
+    <div style="flex: 1; max-width: 200px;">
+      <label for="swskip">Skip Blank Pages (%)</label>
+      <input type="number" id="swskip" name="swskip" min="0" max="100" step="0.1" placeholder="0" style="width: 100%;">
+      <div class="help-text">Discard pages with fewer dark pixels than this threshold (0 = off)</div>
+    </div>
   </div>
 
   <div class="form-group">
@@ -349,9 +402,14 @@ fetchSourcesBtn.onclick = async () => {
   }
 };
 
+function isDuplexSource(name) {
+  return /duplex/i.test(name);
+}
+
 sourceSelect.onchange = () => {
   if (sourceSelect.value) {
     sourceInput.value = sourceSelect.value;
+    document.getElementById('duplex').checked = isDuplexSource(sourceSelect.value);
   }
 };
 
@@ -404,6 +462,8 @@ async function loadSettings() {
       document.getElementById("scanResolution").value = currentSettings.scanResolution || 300;
       document.getElementById("scannerDeviceUrl").value = currentSettings.scannerDeviceUrl || '';
       document.getElementById("source").value = currentSettings.source || '';
+      document.getElementById("duplex").checked = currentSettings.duplex || isDuplexSource(currentSettings.source || '');
+      document.getElementById("swskip").value = currentSettings.swskip || 0;
       document.getElementById("pageWidth").value = currentSettings.pageWidth || 0;
       document.getElementById("pageHeight").value = currentSettings.pageHeight || 0;
       document.getElementById("outputFormat").value = currentSettings.outputFormat || 'pdf';
@@ -448,6 +508,8 @@ form.onsubmit = async (e) => {
     scanResolution: parseInt(formData.get('scanResolution')),
     scannerDeviceUrl: formData.get('scannerDeviceUrl'),
     source: formData.get('source'),
+    duplex: document.getElementById('duplex').checked,
+    swskip: parseFloat(formData.get('swskip')) || 0,
     pageWidth: parseInt(formData.get('pageWidth')) || 0,
     pageHeight: parseInt(formData.get('pageHeight')) || 0,
     outputFormat: formData.get('outputFormat'),

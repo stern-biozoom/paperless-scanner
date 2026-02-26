@@ -26,12 +26,12 @@ const documentManager = new DocumentSessionManager(log);
 const scannerManager = new ScannerManager(log);
 
 // === Scanning ===
-async function scanPage(): Promise<string> {
+async function scanPage(): Promise<string[]> {
   const settings = settingsManager.get();
-  
+
   let scanner: ScannerInfo | undefined;
   let scannerDevice: string;
-  
+
   // Check if a direct scanner device URL is configured
   if (settings.scannerDeviceUrl && settings.scannerDeviceUrl.trim() !== '') {
     // Use the configured scanner device URL directly
@@ -56,36 +56,103 @@ async function scanPage(): Promise<string> {
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const ext = settings.outputFormat || "pdf";
-  const finalFilePath = `${settings.scanOutputDir}/scan-${timestamp}.${ext}`;
-  const tempFilePath = `${finalFilePath}.tmp`;
-  
+  const isDuplex = settings.duplex === true;
+
   // Build scanimage command
   let cmd = `scanimage --device-name="${scannerDevice}" --format=${ext} --resolution=${settings.scanResolution}`;
-  
+
   if (settings.source) {
     cmd += ` --source="${settings.source}"`;
   }
-  
+
   if (settings.pageWidth && settings.pageWidth > 0) {
-    cmd += ` -x ${settings.pageWidth}`;
+    cmd += ` --page-width=${settings.pageWidth}`;
   }
-  
+
   if (settings.pageHeight && settings.pageHeight > 0) {
-    cmd += ` -y ${settings.pageHeight}`;
+    cmd += ` --page-height=${settings.pageHeight}`;
   }
-  
+
+  if (settings.swskip && settings.swskip > 0) {
+    cmd += ` --swskip=${settings.swskip}`;
+  }
+
+  if (isDuplex) {
+    // Duplex mode: use --batch to scan all pages from ADF, each side as a separate file
+    const batchPrefix = `scan-${timestamp}-p`;
+    const batchPattern = `${settings.scanOutputDir}/${batchPrefix}%d.${ext}`;
+    cmd += ` --batch="${batchPattern}"`;
+
+    log(`Starting duplex batch scan with device: ${scannerDevice}...`);
+
+    try {
+      await execAsync(cmd, { timeout: 5 * 60 * 1000 }); // 5 min timeout for multi-page batch
+
+      // Collect all batch output files by scanning for matching filenames
+      const scannedFiles: string[] = [];
+      const dirEntries = fs.readdirSync(settings.scanOutputDir);
+      const matchingFiles = dirEntries
+        .filter(f => f.startsWith(batchPrefix) && f.endsWith(`.${ext}`))
+        .sort((a, b) => {
+          // Sort numerically by page number extracted from filename
+          const numA = parseInt(a.slice(batchPrefix.length, a.lastIndexOf('.')));
+          const numB = parseInt(b.slice(batchPrefix.length, b.lastIndexOf('.')));
+          return numA - numB;
+        });
+
+      for (const filename of matchingFiles) {
+        const filePath = path.join(settings.scanOutputDir, filename);
+        const stats = fs.statSync(filePath);
+        if (stats.size > 0) {
+          scannedFiles.push(filePath);
+          log(`Batch page: ${filename}`);
+        } else {
+          fs.unlinkSync(filePath);
+          log(`Discarded empty batch page: ${filename}`);
+        }
+      }
+
+      if (scannedFiles.length === 0) {
+        throw new Error("Duplex scan failed - no files were created");
+      }
+
+      if (scanner) {
+        scannerManager.markSuccessfulScan(scanner);
+      }
+
+      log(`Duplex batch scan complete: ${scannedFiles.length} page(s) captured`);
+      return scannedFiles;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      // Clean up any partial batch files
+      try {
+        const dirEntries = fs.readdirSync(settings.scanOutputDir);
+        for (const f of dirEntries) {
+          if (f.startsWith(batchPrefix) && f.endsWith(`.${ext}`)) {
+            fs.unlinkSync(path.join(settings.scanOutputDir, f));
+          }
+        }
+      } catch (_) {}
+      throw new Error(`Duplex scan failed: ${errorMsg}`);
+    }
+  }
+
+  // Single-sided scan
+  const finalFilePath = `${settings.scanOutputDir}/scan-${timestamp}.${ext}`;
+  const tempFilePath = `${finalFilePath}.tmp`;
+
   cmd += ` > "${tempFilePath}"`;
-  
+
   log(`Starting page scan with device: ${scannerDevice}...`);
 
   try {
     await execAsync(cmd);
-    
+
     // Check if the temp file was created and has content, then rename to final path
     if (!fs.existsSync(tempFilePath)) {
       throw new Error("Scan failed - no file was created");
     }
-    
+
     const stats = fs.statSync(tempFilePath);
     if (stats.size === 0) {
       // Delete the empty temp file
@@ -94,14 +161,14 @@ async function scanPage(): Promise<string> {
     }
     // Move temporary file to final path
     fs.renameSync(tempFilePath, finalFilePath);
-    
+
     // Mark successful scan to cache the scanner
     if (scanner) {
       scannerManager.markSuccessfulScan(scanner);
     }
-    
+
     log("Page scan complete: " + path.basename(finalFilePath));
-    return finalFilePath;
+    return [finalFilePath];
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
       // If a zero-byte temp file exists due to shell redirection, remove it to avoid littering the scan directory
@@ -145,7 +212,7 @@ async function scanPage(): Promise<string> {
           }
           
           log("Page scan complete after fix: " + path.basename(finalFilePath));
-          return finalFilePath;
+          return [finalFilePath];
         } catch (retryErr) {
           // Ensure any zero-byte temp file from the retry attempt is removed
           try {
@@ -191,13 +258,20 @@ async function scanPage(): Promise<string> {
 // === Scan operations ===
 async function startPageScan() {
   try {
-    const filePath = await scanPage();
-    // Add the scanned page to the default session
-    const result = documentManager.addPageToSession('default', filePath);
-    if (result.success) {
-      log("Page scanned and added to document session. Use 'Combine & Upload' to process all pages.");
+    const filePaths = await scanPage();
+    // Add the scanned page(s) to the default session
+    for (const filePath of filePaths) {
+      const result = documentManager.addPageToSession('default', filePath);
+      if (result.success) {
+        log(`Page added to session: ${path.basename(filePath)}`);
+      } else {
+        log(`Page scanned but failed to add to session: ${result.error}`);
+      }
+    }
+    if (filePaths.length > 1) {
+      log(`${filePaths.length} pages scanned (duplex). Use 'Combine & Upload' to merge and upload.`);
     } else {
-      log(`Page scanned but failed to add to session: ${result.error}`);
+      log("Page scanned and added to document session. Use 'Combine & Upload' to process all pages.");
     }
   } catch (err) {
     log("Page scan error: " + err);

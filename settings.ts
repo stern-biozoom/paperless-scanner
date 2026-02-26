@@ -11,6 +11,8 @@ export interface Settings {
   pageWidth?: number; // Optional: Page width in mm
   pageHeight?: number; // Optional: Page height in mm
   source?: string; // Optional: Scan source (e.g. "ADF", "Flatbed")
+  duplex?: boolean; // Optional: Enable duplex (double-sided) scanning
+  swskip?: number; // Optional: Skip blank pages with less than this % of dark pixels (0-100)
   outputFormat: string; // "pdf", "tiff", "png", "jpeg"
 }
 
@@ -24,6 +26,8 @@ const DEFAULT_SETTINGS: Settings = {
   pageWidth: 0, // 0 means default
   pageHeight: 0, // 0 means default
   source: "", // Empty means default
+  duplex: false, // Disabled by default
+  swskip: 0, // 0 means disabled
   outputFormat: "pdf"
 };
 
