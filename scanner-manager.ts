@@ -395,43 +395,42 @@ export class ScannerManager {
     try {
       const cmd = `scanimage --device-name="${deviceId}" --help`;
       const { stdout } = await execAsync(cmd);
-      
-      // Parse available options
+
       const settings: any = {
         device: deviceId,
         resolutions: [],
         modes: [],
-        formats: ['pdf', 'pnm', 'tiff'],
+        formats: ['pdf', 'pnm', 'tiff', 'png', 'jpeg'],
+        sources: [],
         pageSize: []
       };
 
-      // Extract resolution options
-      const resMatch = stdout.match(/--resolution\s+(\d+(?:\.\d+)?(?:\|\d+(?:\.\d+)?)*)/);
-      if (resMatch && resMatch[1]) {
-        settings.resolutions = resMatch[1].split('|').map(r => parseFloat(r));
+      // --source ADF Front|ADF Back|ADF Duplex [ADF Front]
+      // Sources may contain spaces, capture everything up to the default value bracket
+      const sourceMatch = stdout.match(/--source\s+([\w\s|]+?)\s*\[/);
+      if (sourceMatch?.[1]) {
+        settings.sources = sourceMatch[1].split('|').map((s: string) => s.trim());
       }
 
-      // Extract scan modes
-      const modeMatch = stdout.match(/--mode\s+(\w+(?:\|\w+)*)/);
-      if (modeMatch && modeMatch[1]) {
-        settings.modes = modeMatch[1].split('|');
+      // --mode Lineart|Halftone|Gray|Color [Lineart]
+      const modeMatch = stdout.match(/--mode\s+([\w|]+)\s*\[/);
+      if (modeMatch?.[1]) {
+        settings.modes = modeMatch[1].split('|').map((s: string) => s.trim());
       }
 
-      // Extract available sources
-      const sourceMatch = stdout.match(/--source\s+([^\r\n]+)/);
-      if (sourceMatch && sourceMatch[1]) {
-        // Source can be a list of values like "Flatbed|ADF"
-        const sourcePart = sourceMatch[1].trim();
-        // Look for the part in brackets [Flatbed|ADF] or just the list
-        const listMatch = sourcePart.match(/\[([^\]]+)\]/);
-        if (listMatch && listMatch[1]) {
-          settings.sources = listMatch[1].split('|');
-        } else {
-          // Sometimes it's just the list or a single value
-          settings.sources = sourcePart.split('|');
-        }
-      } else {
-        settings.sources = [];
+      // --resolution 50..600dpi (in steps of 1) [600]
+      // Either a range (min..max) or a pipe-separated list (50|75|100|...)
+      const resRangeMatch = stdout.match(/--resolution\s+(\d+)\.\.(\d+)dpi/);
+      const resListMatch = stdout.match(/--resolution\s+(\d+(?:\|\d+)+)/);
+      if (resRangeMatch?.[1] && resRangeMatch?.[2]) {
+        const min = parseInt(resRangeMatch[1]);
+        const max = parseInt(resRangeMatch[2]);
+        // Filter common DPI values to those within the supported range
+        settings.resolutions = [50, 75, 100, 150, 200, 300, 400, 600]
+            .filter(r => r >= min && r <= max);
+        settings.resolutionRange = { min, max };
+      } else if (resListMatch?.[1]) {
+        settings.resolutions = resListMatch[1].split('|').map(Number);
       }
 
       return { settings };
@@ -443,4 +442,5 @@ export class ScannerManager {
       };
     }
   }
+
 }
