@@ -134,6 +134,11 @@ button {
 .tag .remove:hover {
   color: #dc3545;
 }
+.status.info {
+  background-color: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
 </style>
 </head>
 <body>
@@ -197,7 +202,15 @@ button {
 
   <div class="form-group">
     <label for="source">Scan Source</label>
-    <input type="text" id="source" name="source" placeholder="e.g., ADF, Flatbed">
+    <div style="display: flex; gap: 0.5rem;">
+      <div style="flex: 1;">
+        <input type="text" id="source" name="source" placeholder="e.g., ADF, Flatbed">
+      </div>
+      <button type="button" id="fetchSourcesBtn" class="secondary-btn" style="padding: 0.5rem 1rem; margin: 0; white-space: nowrap;">🔍 Fetch from Scanner</button>
+    </div>
+    <select id="sourceSelect" style="display: none; margin-top: 0.5rem;">
+      <option value="">-- Select Source --</option>
+    </select>
     <div class="help-text">Leave empty for scanner default (e.g., "ADF", "Flatbed", "Automatic Document Feeder")</div>
   </div>
 
@@ -266,6 +279,9 @@ const uploadTestBtn = document.getElementById("uploadTestBtn");
 const pageFormatSelect = document.getElementById("pageFormat");
 const pageWidthInput = document.getElementById("pageWidth");
 const pageHeightInput = document.getElementById("pageHeight");
+const fetchSourcesBtn = document.getElementById("fetchSourcesBtn");
+const sourceInput = document.getElementById("source");
+const sourceSelect = document.getElementById("sourceSelect");
 
 const PAGE_FORMATS = {
   a4: { width: 210, height: 297 },
@@ -284,6 +300,59 @@ pageFormatSelect.onchange = () => {
 
 pageWidthInput.oninput = pageHeightInput.oninput = () => {
   pageFormatSelect.value = "custom";
+};
+
+fetchSourcesBtn.onclick = async () => {
+  try {
+    fetchSourcesBtn.disabled = true;
+    fetchSourcesBtn.textContent = "⏳ Fetching...";
+    
+    let deviceId = document.getElementById("scannerDeviceUrl").value;
+    
+    // If no device URL is set, try to detect scanners first
+    if (!deviceId) {
+      const detectResponse = await fetch("/api/scanners");
+      const detectResult = await detectResponse.json();
+      if (detectResult.scanners && detectResult.scanners.length > 0) {
+        deviceId = detectResult.scanners[0].device;
+      }
+    }
+    
+    if (!deviceId) {
+      showStatus("No scanner detected. Please enter a Scanner Device URL or ensure a scanner is connected.", "error");
+      return;
+    }
+
+    const response = await fetch(`/api/scanner-options?deviceId=${encodeURIComponent(deviceId)}`);
+    const result = await response.json();
+    
+    if (response.ok && result.settings && result.settings.sources && result.settings.sources.length > 0) {
+      sourceSelect.innerHTML = '<option value="">-- Select Source --</option>';
+      result.settings.sources.forEach(src => {
+        const option = document.createElement("option");
+        option.value = src;
+        option.textContent = src;
+        sourceSelect.appendChild(option);
+      });
+      sourceSelect.style.display = "block";
+      showStatus(`Found ${result.settings.sources.length} sources for device ${deviceId}`, "success");
+    } else if (result.error) {
+      showStatus(`Failed to fetch sources: ${result.error}`, "error");
+    } else {
+      showStatus("No specific sources found for this scanner (using defaults).", "info");
+    }
+  } catch (error) {
+    showStatus(`Error fetching sources: ${error.message}`, "error");
+  } finally {
+    fetchSourcesBtn.disabled = false;
+    fetchSourcesBtn.textContent = "🔍 Fetch from Scanner";
+  }
+};
+
+sourceSelect.onchange = () => {
+  if (sourceSelect.value) {
+    sourceInput.value = sourceSelect.value;
+  }
 };
 
 function showStatus(message, type = 'success') {
@@ -353,6 +422,11 @@ async function loadSettings() {
       
       defaultTags = currentSettings.defaultTags || ['scanned', 'automated'];
       renderTags();
+
+      // Trigger source fetching if device URL is present
+      if (currentSettings.scannerDeviceUrl) {
+        fetchSourcesBtn.click();
+      }
     }
   } catch (error) {
     showStatus(`Failed to load settings: ${error.message}`, "error");

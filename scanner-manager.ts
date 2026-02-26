@@ -408,13 +408,30 @@ export class ScannerManager {
       // Extract resolution options
       const resMatch = stdout.match(/--resolution\s+(\d+(?:\.\d+)?(?:\|\d+(?:\.\d+)?)*)/);
       if (resMatch && resMatch[1]) {
-        settings.resolutions = resMatch[1].split('|').map(r => parseInt(r));
+        settings.resolutions = resMatch[1].split('|').map(r => parseFloat(r));
       }
 
       // Extract scan modes
       const modeMatch = stdout.match(/--mode\s+(\w+(?:\|\w+)*)/);
       if (modeMatch && modeMatch[1]) {
         settings.modes = modeMatch[1].split('|');
+      }
+
+      // Extract available sources
+      const sourceMatch = stdout.match(/--source\s+([^\r\n]+)/);
+      if (sourceMatch && sourceMatch[1]) {
+        // Source can be a list of values like "Flatbed|ADF"
+        const sourcePart = sourceMatch[1].trim();
+        // Look for the part in brackets [Flatbed|ADF] or just the list
+        const listMatch = sourcePart.match(/\[([^\]]+)\]/);
+        if (listMatch && listMatch[1]) {
+          settings.sources = listMatch[1].split('|');
+        } else {
+          // Sometimes it's just the list or a single value
+          settings.sources = sourcePart.split('|');
+        }
+      } else {
+        settings.sources = [];
       }
 
       return { settings };

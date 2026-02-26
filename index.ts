@@ -679,6 +679,29 @@ serve({
       }
     }
 
+    if (req.method === "GET" && url.pathname === "/api/scanner-options") {
+      try {
+        const deviceId = url.searchParams.get("deviceId");
+        if (!deviceId) {
+          return new Response(JSON.stringify({ error: "Missing deviceId parameter" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const result = await scannerManager.getScanSettings(deviceId);
+        return new Response(JSON.stringify(result), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          error: error instanceof Error ? error.message : 'Failed to fetch scanner options' 
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Event stream for logs
     if (req.method === "GET" && url.pathname === "/logs") {
       return new Response(
