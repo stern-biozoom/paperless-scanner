@@ -483,10 +483,6 @@ async function loadSettings() {
       defaultTags = currentSettings.defaultTags || ['scanned', 'automated'];
       renderTags();
 
-      // Trigger source fetching if device URL is present
-      if (currentSettings.scannerDeviceUrl) {
-        fetchSourcesBtn.click();
-      }
     }
   } catch (error) {
     showStatus(`Failed to load settings: ${error.message}`, "error");
