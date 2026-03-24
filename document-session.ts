@@ -1,7 +1,11 @@
+import { exec } from "child_process";
+import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import { PDFDocument } from "pdf-lib";
 import { settingsManager } from "./settings.js";
+
+const execAsync = promisify(exec);
 
 export interface DocumentSession {
   id: string;
@@ -45,8 +49,9 @@ export class DocumentSessionManager {
 
     try {
       // Find all scan files and group them into a single session for now
+      const validExtensions = ['.pdf', '.tiff', '.png', '.jpeg', '.jpg'];
       const scanFiles = fs.readdirSync(scanDir)
-        .filter(file => file.endsWith('.pdf') && file.startsWith('scan-'))
+        .filter(file => file.startsWith('scan-') && validExtensions.some(ext => file.endsWith(ext)))
         .map(filename => {
           const filepath = path.join(scanDir, filename);
           const stats = fs.statSync(filepath);
@@ -228,20 +233,31 @@ export class DocumentSessionManager {
     }
   }
 
-  // Combine pages in a session into a single PDF
+  // Combine pages in a session into a single document (PDF via pdf-lib, TIFF via tiffcp)
   async combineSessionPages(sessionId: string): Promise<string> {
     const session = this.getSession(sessionId);
     if (!session || session.pages.length === 0) {
       throw new Error('No pages to combine');
     }
 
-    this.log(`Combining ${session.pages.length} pages from "${session.name}"...`);
+    const settings = settingsManager.get();
+    const format = settings.outputFormat || 'pdf';
 
+    this.log(`Combining ${session.pages.length} pages from "${session.name}" (format: ${format})...`);
+
+    if (format === 'tiff') {
+      return this.combineTiffPages(session, settings.scanOutputDir, sessionId);
+    } else if (format === 'pdf') {
+      return this.combinePdfPages(session, settings.scanOutputDir, sessionId);
+    } else {
+      throw new Error(`Combining is not supported for ${format.toUpperCase()} format`);
+    }
+  }
+
+  private async combinePdfPages(session: DocumentSession, outputDir: string, sessionId: string): Promise<string> {
     try {
-      // Create a new PDF document
       const combinedPdf = await PDFDocument.create();
 
-      // Add each page to the combined PDF
       for (const page of session.pages) {
         if (!fs.existsSync(page.filepath)) {
           this.log(`Warning: Skipping missing file ${page.filename}`);
@@ -251,24 +267,52 @@ export class DocumentSessionManager {
         const pdfBytes = fs.readFileSync(page.filepath);
         const sourcePdf = await PDFDocument.load(pdfBytes);
         const pages = await combinedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-        
+
         pages.forEach((page) => combinedPdf.addPage(page));
       }
 
-      // Generate output path
-      const settings = settingsManager.get();
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const outputPath = path.join(settings.scanOutputDir, `combined-${sessionId}-${timestamp}.pdf`);
+      const outputPath = path.join(outputDir, `combined-${sessionId}-${timestamp}.pdf`);
 
-      // Save the combined PDF
       const pdfBytes = await combinedPdf.save();
       fs.writeFileSync(outputPath, pdfBytes);
 
       this.log(`Successfully combined ${session.pages.length} pages using pdf-lib`);
       return outputPath;
     } catch (error) {
-      this.log(`Error combining pages: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      throw new Error(`Failed to combine pages: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.log(`Error combining PDF pages: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Failed to combine PDF pages: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async combineTiffPages(session: DocumentSession, outputDir: string, sessionId: string): Promise<string> {
+    try {
+      const inputFiles = session.pages
+          .filter(page => {
+            if (!fs.existsSync(page.filepath)) {
+              this.log(`Warning: Skipping missing file ${page.filename}`);
+              return false;
+            }
+            return true;
+          })
+          .map(page => `"${page.filepath}"`);
+
+      if (inputFiles.length === 0) {
+        throw new Error('No valid TIFF files to combine');
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const prefix = inputFiles.length > 1 ? `combined-${sessionId}` : sessionId;
+      const outputPath = path.join(outputDir, `${prefix}-${timestamp}.pdf`);
+
+      const cmd = `img2pdf ${inputFiles.join(' ')} -o "${outputPath}"`;
+      await execAsync(cmd, { timeout: 60 * 1000 });
+
+      this.log(`Successfully combined ${inputFiles.length} pages into PDF using img2pdf`);
+      return outputPath;
+    } catch (error) {
+      this.log(`Error combining TIFF pages into PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Failed to combine TIFF pages into PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

@@ -8,6 +8,12 @@ export interface Settings {
   scanResolution: number;
   defaultTags: string[];
   scannerDeviceUrl?: string; // Optional: Direct scanner device URL (e.g., "escl:https://192.168.178.188:443")
+  pageWidth?: number; // Optional: Page width in mm
+  pageHeight?: number; // Optional: Page height in mm
+  source?: string; // Optional: Scan source (e.g. "ADF", "Flatbed")
+  duplex?: boolean; // Optional: Enable duplex (double-sided) scanning
+  swskip?: number; // Optional: Skip blank pages with less than this % of dark pixels (0-100)
+  outputFormat: string; // "pdf", "tiff", "png", "jpeg"
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -16,7 +22,13 @@ const DEFAULT_SETTINGS: Settings = {
   scanOutputDir: "/tmp",
   scanResolution: 300,
   defaultTags: ["scanned", "automated"],
-  scannerDeviceUrl: "" // Empty means auto-detect
+  scannerDeviceUrl: "", // Empty means auto-detect
+  pageWidth: 0, // 0 means default
+  pageHeight: 0, // 0 means default
+  source: "", // Empty means default
+  duplex: false, // Disabled by default
+  swskip: 0, // 0 means disabled
+  outputFormat: "tiff" // use TIFF as default as it becomes better-to-consume PDF
 };
 
 const SETTINGS_FILE = path.join(process.cwd(), "config", "config.json");
@@ -95,6 +107,10 @@ class SettingsManager {
 
     if (this.settings.scanResolution < 75 || this.settings.scanResolution > 1200) {
       errors.push("Scan resolution must be between 75 and 1200 DPI");
+    }
+
+    if (this.settings.outputFormat && !["pdf", "tiff", "png", "jpeg"].includes(this.settings.outputFormat)) {
+      errors.push("Output format must be one of: pdf, tiff, png, jpeg");
     }
 
     return {

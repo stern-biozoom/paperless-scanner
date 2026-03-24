@@ -20,7 +20,7 @@ WORKDIR /usr/src/app
 
 # Install system dependencies required for SANE/scanning tools
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends sane-utils libsane1 ca-certificates curl \
+  && apt-get install -y --no-install-recommends sane-utils libsane1 ca-certificates curl img2pdf \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy app from builder
